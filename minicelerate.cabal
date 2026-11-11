@@ -1,0 +1,52 @@
+cabal-version: 3.0
+name:          minicelerate
+version:       0
+license:       BSD-3-Clause
+license-file:  LICENSE
+author:        Oleg Grenrus <oleg@well-typed.com>
+maintainer:    TBD
+category:      Accelerate
+build-type:    Simple
+synopsis:
+  Small PoC of different backend approaches applicable to EDSLs like accelerate
+description:
+  Small PoC of different backend approaches applicable to EDSLs like accelerate.
+
+common lang
+  default-language:   Haskell2010
+  default-extensions:
+    DataKinds
+    GADTs
+    RankNTypes
+    StandaloneDeriving
+    TemplateHaskellQuotes
+
+library
+  import:          lang
+  hs-source-dirs:  src
+  build-depends:
+    , base              ^>=4.17.2.0
+    , bytestring        ^>=0.11.5.3
+    , directory         ^>=1.3.7.1
+    , filepath          ^>=1.4.2.2
+    , process           ^>=1.6.18.0
+    , template-haskell  ^>=2.19.0.0
+    , temporary         ^>=1.3
+
+  exposed-modules: Minicelerate
+
+test-suite minicelerate-examples
+  import:         lang
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: tests
+  main-is:        minicelerate-examples.hs
+  build-depends:
+    , base
+    , minicelerate
+    , template-haskell
+
+  build-depends:
+    , QuickCheck        ^>=2.19.0.0
+    , tasty             ^>=1.5.5
+    , tasty-hunit       ^>=0.10.2
+    , tasty-quickcheck  ^>=0.11.1
