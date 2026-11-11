@@ -19,6 +19,9 @@ spliced = $$(splice example)
 cspliced :: Word64 -> Word64
 cspliced = $(TH.unTypeCode (nativeCode example))
 
+cspliced2 :: Word64 -> Word64
+cspliced2 = $(TH.unTypeCode (nativeCodeManual example))
+
 main :: IO ()
 main = defaultMain $ testGroup "minicelerate"
     [ testProperty "TH" $ \x ->
@@ -26,4 +29,7 @@ main = defaultMain $ testGroup "minicelerate"
 
     , testProperty "NativeTH" $ \x ->
         interpret example x === cspliced x
+
+    , testProperty "NativeTHManual" $ \x ->
+        interpret example x === cspliced2 x
     ]

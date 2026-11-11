@@ -3,9 +3,12 @@ module Minicelerate where
 import Control.Monad.IO.Class (liftIO)
 import Data.Kind              (Type)
 import Data.Word              (Word64)
+import System.FilePath        ((</>))
 
 import qualified Language.Haskell.TH        as TH
 import qualified Language.Haskell.TH.Syntax as TH
+import qualified System.Directory           as Dir
+import qualified System.Process             as Proc
 
 -------------------------------------------------------------------------------
 -- Terms (expressions)
@@ -79,10 +82,10 @@ nativeCode t = TH.joinCode $ do
     -- but GHC has a bug: https://gitlab.haskell.org/ghc/ghc/-/work_items/28113
     -- we need to use newName anyway :(
     hsName <- TH.newName "foobar"
-    let cName = "foobarbazquu"
+    let cName = "foobar"
 
     let code = cProgram cName t
-    liftIO $ putStrLn code
+    -- liftIO $ putStrLn code
 
     -- add C program
     TH.addForeignSource TH.LangC code
@@ -105,7 +108,38 @@ nativeCode t = TH.joinCode $ do
 -- though a-l-m generates llvm IR, what underlying compiler (and language)
 -- is used is not relevant as long as the interface is C calls.
 
--- TODO
+nativeCodeManual :: Tm -> TH.CodeQ (Word64 -> Word64)
+nativeCodeManual t = TH.joinCode $ do
+    root <- TH.getPackageRoot >>= liftIO . Dir.makeAbsolute
+
+    hsName <- TH.newName "foobar2"
+    let cName = "foobar2"
+
+    let code = cProgram cName t
+    objectPath <- liftIO $ compileCObject root code
+
+    -- add C program
+    TH.addForeignFilePath TH.RawObject objectPath
+
+    -- type of FFI import
+    ty <- [t| Word64 -> Word64 |]
+
+    -- add top level FFI import
+    TH.addTopDecls $ singleton $
+        TH.ForeignD $ TH.ImportF TH.CCall TH.Safe cName hsName ty
+
+    -- in this simple example we don't need to create wrapper around FFI import
+    return $ TH.unsafeCodeCoerce $ TH.varE hsName
+
+compileCObject :: FilePath -> String -> IO FilePath
+compileCObject root code = do
+    let cfile = root </> "code.c"
+    let ofile = root </> "code.o"
+
+    writeFile cfile code
+    Proc.callProcess "gcc" ["-c", "-o", ofile, cfile]
+
+    return ofile
 
 -------------------------------------------------------------------------------
 -- Example

@@ -1,2 +1,5 @@
 dist-newstyle
 cabal.project.local
+
+code.c
+code.o
