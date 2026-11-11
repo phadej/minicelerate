@@ -1,7 +1,6 @@
 module Minicelerate where
 
 import Control.Monad.IO.Class     (liftIO)
-import Data.Kind                  (Type)
 import Foreign.Ptr                (FunPtr)
 import System.FilePath            ((</>))
 import System.Posix.DynamicLinker (RTLDFlags (RTLD_LOCAL, RTLD_NOW), dlopen, dlsym)
@@ -23,6 +22,7 @@ data Tm where
     Var :: Tm
     Lit :: Double -> Tm
     Add :: Tm -> Tm -> Tm
+    Sin :: Tm -> Tm
 
 deriving instance Show Tm
 
@@ -34,6 +34,7 @@ interpret :: Tm -> Double -> Double
 interpret Var       x = x
 interpret (Lit x)   _ = x
 interpret (Add t s) x = interpret t x + interpret s x
+interpret (Sin t)   x = sin (interpret t x)
 
 -------------------------------------------------------------------------------
 -- Template Haskell
@@ -47,6 +48,7 @@ splice' :: Tm -> TH.CodeQ Double -> TH.CodeQ Double
 splice' Var       x = x
 splice' (Lit x)   _ = [|| $$(TH.liftTyped x) :: Double ||]
 splice' (Add t s) x = [|| $$(splice' t x) + $$(splice' s x) ||]
+splice' (Sin t)   x = [|| sin @Double $$(splice' t x) ||]
 
 -------------------------------------------------------------------------------
 -- C
@@ -54,7 +56,7 @@ splice' (Add t s) x = [|| $$(splice' t x) + $$(splice' s x) ||]
 
 cProgram :: String -> Tm -> String
 cProgram name t = unlines
-    [ "#include <stdint.h>"
+    [ "#include <math.h>"
     , "#include <stdio.h>"
     , "double " ++ name ++ "(double x) {"
     , "    // printf(\"debug: \\n\");"
@@ -67,6 +69,8 @@ cTerm _ Var       = showString "x"
 cTerm _ (Lit n)   = shows n
 cTerm d (Add t s) = showParen (d > 5) $
     cTerm 5 t . showString " + " . cTerm 4 s
+cTerm _ (Sin t)   =
+    showString "sin(" . cTerm 0 t . showChar ')'
 
 -------------------------------------------------------------------------------
 -- Compile time "native" via C, make GHC compile the C code.
@@ -202,16 +206,29 @@ compileSharedObject root code = do
 
     writeFile cfile code
     Proc.callProcess "gcc" ["-c", "-fpic", "-o", ofile, cfile]
-    Proc.callProcess "gcc" ["-shared", "-o", sofile, ofile]
+    -- whether -lm is needed or not ~depends
+    -- There is a comment about that in accelerate-llvm-native
+    Proc.callProcess "gcc" ["-shared", "-o", sofile, ofile, "-lm"]
 
     return sofile
+
+{-
+  -- TODO: Unclear if -lm is necessary on Darwin too; let's add it
+  -- just in case. (The -lm on Linux was added to properly declare
+  -- dependency on libm, so that it gets pulled in even if the main
+  -- executable is statically-linked and thus does not have a dynamic
+  -- libm in its address space.)
+
+  -- macos and linux add -lm, windows doesn't with a comment:
+  -- no -lm necessary on windows
+-}
 
 -------------------------------------------------------------------------------
 -- Example
 -------------------------------------------------------------------------------
 
 example :: Tm
-example = Add Var (Lit 5)
+example = Sin (Add Var (Lit 5))
 
 -------------------------------------------------------------------------------
 -- Utilities
