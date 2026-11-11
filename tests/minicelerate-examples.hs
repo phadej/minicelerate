@@ -2,7 +2,6 @@
 {-# OPTIONS_GHC -ddump-splices #-}
 module Main (main) where
 
-import Data.Word             (Word64)
 import Test.QuickCheck       ((===))
 import Test.Tasty            (defaultMain, testGroup)
 import Test.Tasty.HUnit ()
@@ -12,14 +11,14 @@ import qualified Language.Haskell.TH as TH
 
 import Minicelerate
 
-spliced :: Word64 -> Word64
+spliced :: Double -> Double
 spliced = $$(splice example)
 
 -- because GHC is buggy we need to fallback to untyped Template Haskell.
-cspliced :: Word64 -> Word64
+cspliced :: Double -> Double
 cspliced = $(TH.unTypeCode (nativeCode example))
 
-cspliced2 :: Word64 -> Word64
+cspliced2 :: Double -> Double
 cspliced2 = $(TH.unTypeCode (nativeCodeManual example))
 
 main :: IO ()
