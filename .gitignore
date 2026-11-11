@@ -3,3 +3,7 @@ cabal.project.local
 
 code.c
 code.o
+
+shared.c
+shared.o
+shared.so

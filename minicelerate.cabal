@@ -9,6 +9,7 @@ category:      Accelerate
 build-type:    Simple
 synopsis:
   Small PoC of different backend approaches applicable to EDSLs like accelerate
+
 description:
   Small PoC of different backend approaches applicable to EDSLs like accelerate.
 
@@ -32,6 +33,7 @@ library
     , process           ^>=1.6.18.0
     , template-haskell  ^>=2.19.0.0
     , temporary         ^>=1.3
+    , unix              ^>=2.7.3
 
   exposed-modules: Minicelerate
 

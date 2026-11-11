@@ -1,9 +1,11 @@
 module Minicelerate where
 
-import Control.Monad.IO.Class (liftIO)
-import Data.Kind              (Type)
-import Data.Word              (Word64)
-import System.FilePath        ((</>))
+import Control.Monad.IO.Class     (liftIO)
+import Data.Kind                  (Type)
+import Data.Word                  (Word64)
+import Foreign.Ptr                (FunPtr)
+import System.FilePath            ((</>))
+import System.Posix.DynamicLinker (RTLDFlags (RTLD_LOCAL, RTLD_NOW), dlopen, dlsym)
 
 import qualified Language.Haskell.TH        as TH
 import qualified Language.Haskell.TH.Syntax as TH
@@ -14,6 +16,10 @@ import qualified System.Process             as Proc
 -- Terms (expressions)
 -------------------------------------------------------------------------------
 
+-- The term language in this example is very simple on purpose
+-- The pipeline how we intepret or compile the term language doesn't change
+-- with the complexity of the term language; here we are not interested in
+-- "code generation" step.
 data Tm where
     Var :: Tm
     Lit :: Word64 -> Tm
@@ -34,13 +40,14 @@ interpret (Add t s) x = interpret t x + interpret s x
 -- Template Haskell
 -------------------------------------------------------------------------------
 
+-- this would be like using runQ on Intepreter backend of accelerate.
+splice :: Tm -> TH.CodeQ (Word64 -> Word64)
+splice t = [|| \x -> $$(splice' t [|| x ||]) ||]
+
 splice' :: Tm -> TH.CodeQ Word64 -> TH.CodeQ Word64
 splice' Var       x = x
 splice' (Lit x)   _ = [|| $$(TH.liftTyped x) :: Word64 ||]
 splice' (Add t s) x = [|| $$(splice' t x) + $$(splice' s x) ||]
-
-splice :: Tm -> TH.CodeQ (Word64 -> Word64)
-splice t = [|| \x -> $$(splice' t [|| x ||]) ||]
 
 -------------------------------------------------------------------------------
 -- C
@@ -66,6 +73,13 @@ cTerm d (Add t s) = showParen (d > 5) $
 -- Compile time "native" via C, make GHC compile the C code.
 -------------------------------------------------------------------------------
 
+-- | accelerate doesn't have "raw" C backend.
+-- accelerate-llvm generates LLVM IR, which cannot be compiled by GHC.
+--
+-- If there were a accelerate backend generating C, its runQ
+-- variant would be the cleanest:
+-- The code below doesn't use file system.
+--
 nativeCode :: Tm -> TH.CodeQ (Word64 -> Word64)
 nativeCode t = TH.joinCode $ do
     -- an option would be to use TH.newName to generate fresh name for Haskell name
@@ -108,6 +122,7 @@ nativeCode t = TH.joinCode $ do
 -- though a-l-m generates llvm IR, what underlying compiler (and language)
 -- is used is not relevant as long as the interface is C calls.
 
+-- | runQ with Native backend.
 nativeCodeManual :: Tm -> TH.CodeQ (Word64 -> Word64)
 nativeCodeManual t = TH.joinCode $ do
     root <- TH.getPackageRoot >>= liftIO . Dir.makeAbsolute
@@ -140,6 +155,57 @@ compileCObject root code = do
     Proc.callProcess "gcc" ["-c", "-o", ofile, cfile]
 
     return ofile
+
+-------------------------------------------------------------------------------
+-- Run-time by manually invoking GCC to create shared library
+-------------------------------------------------------------------------------
+
+-- 1. Compile with PIC
+-- $ gcc -c -Wall -Werror -fpic foo.c
+--
+-- 2. Create a shared lib from an object file
+-- $ gcc -shared -o libfoo.so foo.o
+--
+-- 3. Load with dlopen/dlsym
+
+-- Note: accelerate use unsafePerformIO so the interface of
+-- e.g. accelerate-llvm-native looks pure
+-- In this example library we rather be honest about where IO occurs.
+
+-- | run Native backend.
+nativeCodeRuntime :: Tm -> IO (Word64 -> Word64)
+nativeCodeRuntime tm = do
+    let cName = "foobar3"
+    root <- Dir.getCurrentDirectory
+    so <- compileSharedObject root $ cProgram cName tm
+
+    -- open shared library and load symbol.
+    -- we do "leak" the reference, library stays open until program is terminated.
+    dl  <- dlopen so [RTLD_NOW, RTLD_LOCAL]
+    sym <- dlsym dl cName
+
+    return (dynamicCall sym)
+
+-- dynamic stub to call our foreign type
+--
+-- I'm not sure how accelarete-llvm-native eventually calls into C,
+-- it could be by passing function pointers to some manually written C code
+-- instead of asking GHC to create a stub.
+--
+foreign import ccall "dynamic"
+    dynamicCall :: FunPtr (Word64 -> Word64) -> Word64 -> Word64
+
+compileSharedObject :: FilePath -> String -> IO FilePath
+compileSharedObject root code = do
+    let cfile  = root </> "shared.c"
+    let ofile  = root </> "shared.o"
+    let sofile = root </> "shared.so"
+
+    writeFile cfile code
+    Proc.callProcess "gcc" ["-c", "-fpic", "-o", ofile, cfile]
+    Proc.callProcess "gcc" ["-shared", "-o", sofile, ofile]
+
+    return sofile
 
 -------------------------------------------------------------------------------
 -- Example

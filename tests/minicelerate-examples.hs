@@ -23,13 +23,19 @@ cspliced2 :: Word64 -> Word64
 cspliced2 = $(TH.unTypeCode (nativeCodeManual example))
 
 main :: IO ()
-main = defaultMain $ testGroup "minicelerate"
-    [ testProperty "TH" $ \x ->
-        interpret example x === spliced x
+main = do
+    runtime <- nativeCodeRuntime example
 
-    , testProperty "NativeTH" $ \x ->
-        interpret example x === cspliced x
+    defaultMain $ testGroup "minicelerate"
+        [ testProperty "TH" $ \x ->
+            interpret example x === spliced x
 
-    , testProperty "NativeTHManual" $ \x ->
-        interpret example x === cspliced2 x
-    ]
+        , testProperty "NativeTH" $ \x ->
+            interpret example x === cspliced x
+
+        , testProperty "NativeTHManual" $ \x ->
+            interpret example x === cspliced2 x
+
+        , testProperty "Runtime" $ \x ->
+            interpret example x === runtime x
+        ]
